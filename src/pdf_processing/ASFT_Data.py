@@ -7,6 +7,13 @@ from typing import Optional, NamedTuple
 from pypdf import PdfReader
 
 
+class RunwayConfig(NamedTuple):
+    iata: str
+    numbering: int
+    relative_side: str
+    separation: int
+
+
 class ASFT_Data:
     def __init__(self, file_path: Path) -> None:
         self.filename: str = file_path.stem
@@ -15,6 +22,11 @@ class ASFT_Data:
         self._report = None
         self._measurements = None
         self._results = None
+
+        self._iata = None
+        self._numbering = None
+        self._relative_side = None
+        self._separation = None
 
     def __str__(self) -> str:
         """
@@ -254,10 +266,29 @@ class ASFT_Data:
 
         return df
 
+    def _get_configuration(
+        self, friction_measurent_report: pd.DataFrame
+    ) -> RunwayConfig:
+        """
+        Extract runway configuration details (IATA code, runway numbering, relative_side and separation) from a given string and return
+        a RunwayConfig object.
+
+        Args:
+            configuration (str): A string containing the runway configuration information.
+
+        Returns:
+            RunwayConfig: A RunwayConfig object with the extracted IATA airport code, runway numbering, relative_side, and separation value.
+        """
+        config = friction_measurent_report.loc[0, "Configuration"]
+
+        iata: str = re.search(r"^[A-Z]{3}", config).group()
+        numbering: str = re.search(r"\b\d{2}\b", config).group()
+        return numbering
+
 
 a = ASFT_Data(
     Path("C:/Users/lucas/Desktop/aa2k_ASFT/pdf/AEP/AEP RWY 13 L3_230427_013450.pdf")
 )
 
-print(a.filename)
-print(a.result_summary)
+
+print(a._get_configuration(a.friction_measurent_report))
