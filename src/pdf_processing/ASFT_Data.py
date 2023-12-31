@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 
+import datetime
 from pathlib import Path
 from typing import Optional, NamedTuple
 from pypdf import PdfReader
@@ -28,6 +29,39 @@ class ASFT_Data:
             Number of rows in the measurements table.
         """
         return len(self.measurements)
+
+    @property
+    def friction_measurent_report(self) -> pd.DataFrame:
+        """
+        Returns:
+            Configuration Tyre Type      Date and Time Tyre Pressure  Type Water Film Equipment Average Speed  Pilot System Distance Ice Level Runway Length Location
+        0  RGL RWY 07 R3      ASTM  23-03-10 11:29:28           2.1  ASTM         ON   SFT0148            66  SUPER         2398.58         0          3300     ASFT
+        """
+        return self.report_extractor(self.reader)
+
+    @property
+    def result_summary(self) -> pd.DataFrame:
+        """
+        Returns:
+          Fric. A Fric. B Fric. C Fric. Max Fric. Min Fric. Avg
+        0    0.64    0.68    0.64      0.82      0.42      0.65
+        """
+        return self.results_extractor(self.reader)
+
+    @property
+    def measurements(self) -> pd.DataFrame:
+        """
+        Returns:
+            Distance Friction Speed  Av. Friction 100m
+                10     0.80    61               0.00
+                20     0.65    63               0.00
+                30     0.53    64               0.00
+                40     0.84    67               0.00
+                50     0.86    69               0.00
+                ...    ...     ...              ...
+                1760   0.88    66               0.81
+        """
+        return self.measurements_extractor(self.reader)
 
     def measurements_extractor(self, reader):
         """
@@ -112,6 +146,21 @@ class ASFT_Data:
 
             self._results = pd.DataFrame([first_six_values], columns=headers)
         return self._results
+
+    def _parse_date(
+        self, date: str, format: str = "%y-%m-%d %H:%M:%S"
+    ) -> datetime.datetime:
+        """
+        Parse a date string and return a datetime object.
+
+        Args:
+            date (str): The date string to be parsed.
+            format (str, optional): The format of the date string. Defaults to "%y-%m-%d %H:%M:%S".
+
+        Returns:
+            datetime.datetime: A datetime object representing the parsed date.
+        """
+        return datetime.datetime.strptime(date, format)
 
     def _rolling_average(
         self,
@@ -211,3 +260,4 @@ a = ASFT_Data(
 )
 
 print(a.filename)
+print(a.result_summary)
