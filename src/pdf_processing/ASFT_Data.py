@@ -7,13 +7,6 @@ from typing import Optional, NamedTuple
 from pypdf import PdfReader
 
 
-class RunwayConfig(NamedTuple):
-    iata: str
-    numbering: int
-    relative_side: str
-    separation: int
-
-
 class ASFT_Data:
     def __init__(self, file_path: Path) -> None:
         self.filename: str = file_path.stem
@@ -27,6 +20,9 @@ class ASFT_Data:
         self._numbering = None
         self._relative_side = None
         self._separation = None
+
+        self._runway_length = 3000
+        self._starting_point = 130
 
     def __str__(self) -> str:
         """
@@ -73,23 +69,106 @@ class ASFT_Data:
                 ...    ...     ...              ...
                 1760   0.88    66               0.81
         """
-        return self.measurements_extractor(self.reader)
+        df = self.measurements_extractor()
+        df["Av. Friction 100m"] = self._rolling_average(df["Friction"])
+        df["Color Code"] = self._color_assignment(df["Av. Friction 100m"])
+        return df
 
-    def measurements_extractor(self, reader):
+    @property
+    def measurements_with_chainage(self) -> pd.DataFrame:
         """
-             Distance  Friction  Speed
-        0          10      0.69     62
-        1          20      0.67     64
-        2          30      0.63     67
-        3          40      0.62     69
-        4          50      0.59     71
-        ..        ...       ...    ...
+        Aligns the measurements table with the corresponding chainage of the runway, measured from left to right.
+
+        This function takes runway numbering and runway length as inputs, calculates the chainage table, and then aligns
+        the measurements data with the corresponding chainage values based on the starting point. The chainage values are
+        measured from left to right, starting from the runway numbers that are between 01 and 18. The resulting DataFrame
+        contains the Key, chainage, and measurements columns.
+
+        Args:
+            data (ASFT_Data): An instance of the ASFT_Data class, which contains the runway numbering, key, and measurements.
+            runway_length (int): The total length of the runway, which should be a positive integer value.
+            starting_point (int): The chainage value where the measurements data should start aligning, referenced
+                                from the runway numbers between 01 and 18.
+
+        Returns:
+                Chainage  Distance  Friction  Speed  Av. Friction 100m
+            0        2200         0      0.00      0                0.0
+            1        2190         0      0.00      0                0.0
+            2        2180         0      0.00      0                0.0
+            3        2170        10      0.84     62                0.0
+            4        2160        20      0.82     63                0.0
+            ..        ...       ...       ...    ...                ...
+            216        40         0      0.00      0                0.0
+
+        Raises:
+            ValueError: If the measurements table overflows the chainage table. This error suggests adjusting the starting
+                        point or the runway length.
+
+
+            |=============|===================================================================|=============|
+            | -> -> -> -> |11   ===   ===   ===   ===   [  RWY  ]   ===   ===   ===   ===   29| <- <- <- <- |
+            |=============|===================================================================|=============|
+
+            |...............................................................................................| chainage
+            [ ORIGIN ]                                                                             [ LENGTH ]
+
+
+                          |.................................................................................| starting point from header 11
+                          [ START ] -> -> -> -> -> -> -> -> -> -> -> -> -> ->-> -> -> -> -> -> -> -> -> -> ->
+
+
+                                                                                              |.............| starting point from header 29
+            <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <-  [ START ]
+
+        """
+
+        numbering = 13
+
+        if not self._runway_length or not self._starting_point:
+            raise ValueError(
+                "Please set the runway length and starting point before calling this function."
+            )
+
+        # numbering = int(self.numbering)
+        reverse = (
+            True if 19 <= numbering <= 36 else False if 1 <= numbering <= 18 else None
+        )
+
+        chainage = self._chainage_table(self._runway_length, reversed=reverse)
+
+        start_index = chainage[chainage["Chainage"] == self._starting_point].index[0]
+
+        if start_index + len(self.measurements) > len(chainage):
+            raise ValueError(
+                "The measurements table overflows the chainage table. Please adjust the starting point or the runway length."
+            )
+
+        for col in self.measurements.columns:
+            if col not in chainage.columns:
+                chainage[col] = 0
+
+            for i, value in enumerate(self.measurements[col]):
+                chainage.at[start_index + i, col] = value
+
+        chainage["Color Code"] = chainage["Color Code"].replace(0, "white")
+
+        return chainage
+
+    def measurements_extractor(self):
+        """
+            Distance  Friction  Speed  Av. Friction 100m Color Code
+        0          10      0.69     58               0.00      white
+        1          20      0.68     60               0.00      white
+        2          30      0.71     62               0.00      white
+        3          40      0.71     63               0.00      white
+        4          50      0.71     66               0.00      white
+        ..        ...       ...    ...                ...        ...
         """
         if self._measurements is None:
             pattern = r"(\d+?)(\d{1}\.\d{2})(\d{2})"
             measurement = []
-            for page_number in range(len(reader.pages)):
-                page = reader.pages[page_number]
+            for page_number in range(len(self.reader.pages)):
+                page = self.reader.pages[page_number]
                 text = page.extract_text()
                 if text:
                     matches = re.findall(pattern, text)
@@ -203,12 +282,11 @@ class ASFT_Data:
     def _color_assignment(self, series: pd.Series) -> pd.Series:
         """
         Assign a color to each friction average in a given pandas series based on the friction average,
-        and propagate 'red' color to a window of 5 positions before and after each 'red' friction average
-        following OACI and FAA recommendations.
-
+        and propagate 'red' color to a window of 5 positions before and after each 'red' friction average,
+        omitting rows where the color is 'white', following OACI and FAA recommendations.
 
         The color assignment rules are as follows:
-        - None for friction average equal to 0.0
+        - 'white' for friction average equal to 0.0
         - 'red' for friction average less than 0.5
         - 'yellow' for friction average less than 0.6 but not less than 0.5
         - 'green' otherwise
@@ -218,10 +296,10 @@ class ASFT_Data:
 
         Returns:
             pd.Series: A pandas series with assigned colors, where 'red' color is propagated
-            to 5 positions before and after each 'red' friction average.
+            to 5 positions before and after each 'red' friction average, omitting 'white' rows.
         """
 
-        def color_assign(friction_average):
+        def assign_color_based_on_friction(friction_average):
             if friction_average == 0.0:
                 return "white"
             elif friction_average < 0.5:
@@ -231,14 +309,19 @@ class ASFT_Data:
             else:
                 return "green"
 
-        new_column = series.apply(color_assign)
+        assigned_colors = series.apply(assign_color_based_on_friction)
 
-        mask = new_column == "red"
-        for i in range(-5, 5):
-            mask |= new_column.shift(i) == "red"
-        new_column.loc[mask] = "red"
+        red_color_mask = assigned_colors == "red"
+        white_color_mask = assigned_colors == "white"
 
-        return new_column
+        for offset in range(-5, 6):
+            shifted_red_mask = assigned_colors.shift(offset) == "red"
+            shifted_white_mask = assigned_colors.shift(offset) == "white"
+            red_color_mask |= shifted_red_mask & ~shifted_white_mask
+
+        assigned_colors.loc[red_color_mask] = "red"
+
+        return assigned_colors
 
     def _chainage_table(
         self, runway_length: int, step: int = 10, reversed: bool = False
@@ -266,24 +349,27 @@ class ASFT_Data:
 
         return df
 
-    def _get_configuration(
-        self, friction_measurent_report: pd.DataFrame
-    ) -> RunwayConfig:
-        """
-        Extract runway configuration details (IATA code, runway numbering, relative_side and separation) from a given string and return
-        a RunwayConfig object.
+    # def _get_configuration(
+    #     self, friction_measurent_report: pd.DataFrame
+    # ) -> RunwayConfig:
+    #     """
+    #     Extract runway configuration details (IATA code, runway numbering, relative_side and separation) from a given string and return
+    #     a RunwayConfig object.
 
-        Args:
-            configuration (str): A string containing the runway configuration information.
+    #     Args:
+    #         configuration (str): A string containing the runway configuration information.
 
-        Returns:
-            RunwayConfig: A RunwayConfig object with the extracted IATA airport code, runway numbering, relative_side, and separation value.
-        """
-        config = friction_measurent_report.loc[0, "Configuration"]
+    #     Returns:
+    #         RunwayConfig: A RunwayConfig object with the extracted IATA airport code, runway numbering, relative_side, and separation value.
+    #     """
+    #     config = friction_measurent_report.loc[0, "Configuration"]
 
-        iata: str = re.search(r"^[A-Z]{3}", config).group()
-        numbering: str = re.search(r"\b\d{2}\b", config).group()
-        return numbering
+    #     _temp: str = re.search(r"[A-Z][0-9]", config).group()
+    #     iata: str = re.search(r"^[A-Z]{3}", config).group()
+    #     numbering: str = re.search(r"\b\d{2}\b", config).group()
+    #     side: str = _temp[0]
+    #     separation: int = int(_temp[1])
+    #     return separation
 
 
 a = ASFT_Data(
@@ -291,4 +377,7 @@ a = ASFT_Data(
 )
 
 
-print(a._get_configuration(a.friction_measurent_report))
+print(a.measurements_with_chainage)
+
+
+# TODO: Use a dictionary for cacheing
