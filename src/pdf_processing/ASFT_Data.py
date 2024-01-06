@@ -1,9 +1,7 @@
 import pandas as pd
 import re
 
-import datetime
 from pathlib import Path
-from typing import Optional, NamedTuple
 from pypdf import PdfReader
 
 
@@ -12,17 +10,8 @@ class ASFT_Data:
         self.filename: str = file_path.stem
         self.reader: PdfReader = PdfReader(file_path)
 
-        self._report = None
-        self._measurements = None
-        self._results = None
-
-        self._iata = None
-        self._numbering = None
-        self._relative_side = None
-        self._separation = None
-
-        self._runway_length = 3000
-        self._starting_point = 130
+        self._cache = {}
+        self._measurement_info = {}
 
     def __str__(self) -> str:
         """
@@ -39,13 +28,13 @@ class ASFT_Data:
         return len(self.measurements)
 
     @property
-    def friction_measurent_report(self) -> pd.DataFrame:
+    def friction_measurement_report(self) -> pd.DataFrame:
         """
         Returns:
             Configuration Tyre Type      Date and Time Tyre Pressure  Type Water Film Equipment Average Speed  Pilot System Distance Ice Level Runway Length Location
         0  RGL RWY 07 R3      ASTM  23-03-10 11:29:28           2.1  ASTM         ON   SFT0148            66  SUPER         2398.58         0          3300     ASFT
         """
-        return self.report_extractor(self.reader)
+        return self._report_extractor(self.reader)
 
     @property
     def result_summary(self) -> pd.DataFrame:
@@ -54,7 +43,7 @@ class ASFT_Data:
           Fric. A Fric. B Fric. C Fric. Max Fric. Min Fric. Avg
         0    0.64    0.68    0.64      0.82      0.42      0.65
         """
-        return self.results_extractor(self.reader)
+        return self._results_extractor(self.reader)
 
     @property
     def measurements(self) -> pd.DataFrame:
@@ -69,7 +58,7 @@ class ASFT_Data:
                 ...    ...     ...              ...
                 1760   0.88    66               0.81
         """
-        df = self.measurements_extractor()
+        df = self._measurements_extractor()
         df["Av. Friction 100m"] = self._rolling_average(df["Friction"])
         df["Color Code"] = self._color_assignment(df["Av. Friction 100m"])
         return df
@@ -121,10 +110,9 @@ class ASFT_Data:
             <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <-  [ START ]
 
         """
+        numbering = int(self.configuration.loc[0, "numbering"])
 
-        numbering = 13
-
-        if not self._runway_length or not self._starting_point:
+        if self.runway_length is None or self.runway_starting_position is None:
             raise ValueError(
                 "Please set the runway length and starting point before calling this function."
             )
@@ -134,9 +122,11 @@ class ASFT_Data:
             True if 19 <= numbering <= 36 else False if 1 <= numbering <= 18 else None
         )
 
-        chainage = self._chainage_table(self._runway_length, reversed=reverse)
+        chainage = self._chainage_table(self.runway_length, reversed=reverse)
 
-        start_index = chainage[chainage["Chainage"] == self._starting_point].index[0]
+        start_index = chainage[
+            chainage["Chainage"] == self.runway_starting_position
+        ].index[0]
 
         if start_index + len(self.measurements) > len(chainage):
             raise ValueError(
@@ -154,7 +144,46 @@ class ASFT_Data:
 
         return chainage
 
-    def measurements_extractor(self):
+    @property
+    def configuration(self) -> pd.DataFrame:
+        return self._get_configuration()
+
+    @property
+    def key_1(self) -> str:
+        return (
+            f"{self.friction_measurement_report.loc[0, 'Date and Time'].strftime('%y%m%d%H%M')}"
+            f"{self.configuration.loc[0, 'iata']}"
+            f"{self.configuration.loc[0, 'runway']}"
+            f"{self.configuration.loc[0, 'relative side']}"
+            f"{self.configuration.loc[0, 'separation']}"
+        )
+
+    @property
+    def key_2(self) -> str:
+        return (
+            f"{self.configuration.loc[0, 'iata']}"
+            f"{self.configuration.loc[0, 'runway']}"
+        )
+
+    # MANUALLY SET PROPERTIES
+
+    @property
+    def runway_length(self) -> int:
+        return self._measurement_info.get("runway_length")
+
+    @runway_length.setter
+    def runway_length(self, value: int) -> None:
+        self._measurement_info["runway_length"] = value
+
+    @property
+    def runway_starting_position(self) -> str:
+        return self._measurement_info.get("runway_starting_position")
+
+    @runway_starting_position.setter
+    def runway_starting_position(self, value: str) -> None:
+        self._measurement_info["runway_starting_position"] = value
+
+    def _measurements_extractor(self):
         """
             Distance  Friction  Speed  Av. Friction 100m Color Code
         0          10      0.69     58               0.00      white
@@ -164,7 +193,9 @@ class ASFT_Data:
         4          50      0.71     66               0.00      white
         ..        ...       ...    ...                ...        ...
         """
-        if self._measurements is None:
+
+        key = "measurements"
+        if key not in self._cache:
             pattern = r"(\d+?)(\d{1}\.\d{2})(\d{2})"
             measurement = []
             for page_number in range(len(self.reader.pages)):
@@ -178,17 +209,19 @@ class ASFT_Data:
                         speed = int(match[2])
                         measurement.append((distance, friction, speed))
 
-            self._measurements = pd.DataFrame(
+            self._cache[key] = pd.DataFrame(
                 measurement, columns=["Distance", "Friction", "Speed"]
             )
-        return self._measurements
+        return self._cache[key]
 
-    def report_extractor(self, reader):
+    def _report_extractor(self, reader):
         """
            Configuration Tyre Type      Date and Time Tyre Pressure  Type Water Film Equipment Average Speed  Pilot System Distance Ice Level Runway Length Location
         0  RGL RWY 07 R3      ASTM  23-03-10 11:29:28           2.1  ASTM         ON   SFT0148            66  SUPER         2398.58         0          3300     ASFT
         """
-        if self._report is None:
+
+        key = "report"
+        if key not in self._cache:
             page = reader.pages[0]
             text = page.extract_text()
             patterns = {
@@ -212,15 +245,22 @@ class ASFT_Data:
                 match = re.search(pattern, text, re.MULTILINE)
                 extracted_values[key] = match.group(1) if match else None
 
-            self._report = pd.DataFrame([extracted_values])
-        return self._report
+            df = pd.DataFrame([extracted_values])
+            df["Date and Time"] = pd.to_datetime(
+                df["Date and Time"], format="%y-%m-%d %H:%M:%S"
+            )
 
-    def results_extractor(self, reader):
+            self._cache[key] = df
+        return self._cache[key]
+
+    def _results_extractor(self, reader):
         """
           Fric. A Fric. B Fric. C Fric. Max Fric. Min Fric. Avg
         0    0.64    0.68    0.64      0.82      0.42      0.65
         """
-        if self._results is None:
+
+        key = "results"
+        if key not in self._cache:
             page = reader.pages[0]
             text = page.extract_text()
             pattern = r"\d\.\d{2}µ"
@@ -235,23 +275,8 @@ class ASFT_Data:
                 "Fric. Avg",
             ]
 
-            self._results = pd.DataFrame([first_six_values], columns=headers)
-        return self._results
-
-    def _parse_date(
-        self, date: str, format: str = "%y-%m-%d %H:%M:%S"
-    ) -> datetime.datetime:
-        """
-        Parse a date string and return a datetime object.
-
-        Args:
-            date (str): The date string to be parsed.
-            format (str, optional): The format of the date string. Defaults to "%y-%m-%d %H:%M:%S".
-
-        Returns:
-            datetime.datetime: A datetime object representing the parsed date.
-        """
-        return datetime.datetime.strptime(date, format)
+            self._cache[key] = pd.DataFrame([first_six_values], columns=headers)
+        return self._cache[key]
 
     def _rolling_average(
         self,
@@ -349,27 +374,62 @@ class ASFT_Data:
 
         return df
 
-    # def _get_configuration(
-    #     self, friction_measurent_report: pd.DataFrame
-    # ) -> RunwayConfig:
-    #     """
-    #     Extract runway configuration details (IATA code, runway numbering, relative_side and separation) from a given string and return
-    #     a RunwayConfig object.
+    def _get_configuration(self):
+        key = "configuration"
+        if key not in self._cache:
+            config = self.friction_measurement_report.loc[0, "Configuration"]
 
-    #     Args:
-    #         configuration (str): A string containing the runway configuration information.
+            _temp: str = re.search(r"[A-Z][0-9]", config).group()
+            iata: str = re.search(r"^[A-Z]{3}", config).group()
+            numbering: str = re.search(r"\b\d{2}\b", config).group()
+            relative_side: str = _temp[0]
+            separation: int = int(_temp[1])
 
-    #     Returns:
-    #         RunwayConfig: A RunwayConfig object with the extracted IATA airport code, runway numbering, relative_side, and separation value.
-    #     """
-    #     config = friction_measurent_report.loc[0, "Configuration"]
+            def get_runway_designation(runway: str) -> str:
+                # Convert the runway number to an integer and calculate the opposite runway number
+                runway_num = int(runway)
+                opposite_runway_num = (
+                    runway_num + 18 if runway_num <= 18 else runway_num - 18
+                )
 
-    #     _temp: str = re.search(r"[A-Z][0-9]", config).group()
-    #     iata: str = re.search(r"^[A-Z]{3}", config).group()
-    #     numbering: str = re.search(r"\b\d{2}\b", config).group()
-    #     side: str = _temp[0]
-    #     separation: int = int(_temp[1])
-    #     return separation
+                # Ensure the smaller number comes first
+                first_runway, second_runway = sorted([runway_num, opposite_runway_num])
+
+                # Format the numbers to always have two digits
+                formatted_first_runway = f"{first_runway:02d}"
+                formatted_second_runway = f"{second_runway:02d}"
+
+                # Combine both runway numbers to get the runway designation
+                runway_designation = (
+                    f"{formatted_first_runway}-{formatted_second_runway}"
+                )
+                return runway_designation
+
+            def get_absolute_side(numbering: str, relative_side: str) -> str:
+                # Convert numbering to integer
+                runway_number = int(numbering)
+
+                # Determine absolute side
+                if 1 <= runway_number <= 18:
+                    absolute_side = relative_side
+                else:
+                    absolute_side = "L" if relative_side == "R" else "R"
+
+                return absolute_side
+
+            self._cache[key] = pd.DataFrame(
+                [
+                    {
+                        "iata": iata,
+                        "numbering": numbering,
+                        "runway": get_runway_designation(numbering),
+                        "absolute side": get_absolute_side(numbering, relative_side),
+                        "relative side": relative_side,
+                        "separation": separation,
+                    }
+                ]
+            )
+        return self._cache[key]
 
 
 a = ASFT_Data(
@@ -377,7 +437,10 @@ a = ASFT_Data(
 )
 
 
+a.runway_length = 3000
+a.runway_starting_position = 0
+
 print(a.measurements_with_chainage)
 
 
-# TODO: Use a dictionary for cacheing
+# TODO: Use a dictionary for cacheing, fix docstrings, error handling in config, type hinting, validation to runway_length must be multipe of 10

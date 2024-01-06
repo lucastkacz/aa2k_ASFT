@@ -1,0 +1,2 @@
+[flake8]
+max-line-length = 200  # Set this to your desired line length
