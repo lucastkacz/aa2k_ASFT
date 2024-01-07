@@ -65,6 +65,8 @@ class ASFT_Data:
 
     @property
     def measurements_with_chainage(self) -> pd.DataFrame:
+        # TODO: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise in a future error of pandas. Value 'white'
+        #       has dtype incompatible with int64, please explicitly cast to a compatible dtype first.
         """
         Aligns the measurements table with the corresponding chainage of the runway, measured from left to right.
 
@@ -117,7 +119,6 @@ class ASFT_Data:
                 "Please set the runway length and starting point before calling this function."
             )
 
-        # numbering = int(self.numbering)
         reverse = (
             True if 19 <= numbering <= 36 else False if 1 <= numbering <= 18 else None
         )
@@ -166,7 +167,6 @@ class ASFT_Data:
         )
 
     # MANUALLY SET PROPERTIES
-
     @property
     def runway_length(self) -> int:
         return self._measurement_info.get("runway_length")
@@ -386,35 +386,24 @@ class ASFT_Data:
             separation: int = int(_temp[1])
 
             def get_runway_designation(runway: str) -> str:
-                # Convert the runway number to an integer and calculate the opposite runway number
                 runway_num = int(runway)
                 opposite_runway_num = (
                     runway_num + 18 if runway_num <= 18 else runway_num - 18
                 )
-
-                # Ensure the smaller number comes first
                 first_runway, second_runway = sorted([runway_num, opposite_runway_num])
-
-                # Format the numbers to always have two digits
                 formatted_first_runway = f"{first_runway:02d}"
                 formatted_second_runway = f"{second_runway:02d}"
-
-                # Combine both runway numbers to get the runway designation
                 runway_designation = (
                     f"{formatted_first_runway}-{formatted_second_runway}"
                 )
                 return runway_designation
 
             def get_absolute_side(numbering: str, relative_side: str) -> str:
-                # Convert numbering to integer
                 runway_number = int(numbering)
-
-                # Determine absolute side
                 if 1 <= runway_number <= 18:
                     absolute_side = relative_side
                 else:
                     absolute_side = "L" if relative_side == "R" else "R"
-
                 return absolute_side
 
             self._cache[key] = pd.DataFrame(
@@ -432,15 +421,14 @@ class ASFT_Data:
         return self._cache[key]
 
 
-a = ASFT_Data(
-    Path("C:/Users/lucas/Desktop/aa2k_ASFT/pdf/AEP/AEP RWY 13 L3_230427_013450.pdf")
-)
+if __name__ == "__main__":
+    a = ASFT_Data(
+        Path("C:/Users/lucas/Desktop/aa2k_ASFT/pdf/AEP/AEP RWY 13 L3_230427_013450.pdf")
+    )
 
+    a.runway_length = 2430
+    a.runway_starting_position = 20
 
-a.runway_length = 3000
-a.runway_starting_position = 0
-
-print(a.measurements_with_chainage)
-
+    print(a.friction_measurement_report.loc[0, "Date and Time"])
 
 # TODO: Use a dictionary for cacheing, fix docstrings, error handling in config, type hinting, validation to runway_length must be multipe of 10
