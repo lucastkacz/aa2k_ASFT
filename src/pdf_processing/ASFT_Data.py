@@ -11,7 +11,15 @@ class ASFT_Data:
         self.reader: PdfReader = PdfReader(file_path)
 
         self._cache = {}
-        self._measurement_info = {}
+
+        # Manually set properties
+        self.runway_length = None
+        self.runway_starting_position = None
+        self.operator = None
+        self.ambient_temperature = None
+        self.surface_temperature = None
+        self.humidity = None
+        self.observations = None
 
     def __str__(self) -> str:
         """
@@ -65,8 +73,6 @@ class ASFT_Data:
 
     @property
     def measurements_with_chainage(self) -> pd.DataFrame:
-        # TODO: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise in a future error of pandas. Value 'white'
-        #       has dtype incompatible with int64, please explicitly cast to a compatible dtype first.
         """
         Aligns the measurements table with the corresponding chainage of the runway, measured from left to right.
 
@@ -112,13 +118,11 @@ class ASFT_Data:
             <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <- <-  [ START ]
 
         """
-        numbering = int(self.configuration.loc[0, "numbering"])
-
         if self.runway_length is None or self.runway_starting_position is None:
             raise ValueError(
                 "Please set the runway length and starting point before calling this function."
             )
-
+        numbering = int(self.configuration.loc[0, "numbering"])
         reverse = (
             True if 19 <= numbering <= 36 else False if 1 <= numbering <= 18 else None
         )
@@ -134,14 +138,31 @@ class ASFT_Data:
                 "The measurements table overflows the chainage table. Please adjust the starting point or the runway length."
             )
 
+        float_columns = [
+            "Friction",
+            "Av. Friction 100m",
+        ]
+        for col in float_columns:
+            if col in chainage.columns:
+                chainage[col] = chainage[col].astype(float)
+            elif col in self.measurements.columns:
+                chainage[col] = 0.0
         for col in self.measurements.columns:
             if col not in chainage.columns:
-                chainage[col] = 0
+                chainage[col] = "white" if col == "Color Code" else 0
 
             for i, value in enumerate(self.measurements[col]):
                 chainage.at[start_index + i, col] = value
 
-        chainage["Color Code"] = chainage["Color Code"].replace(0, "white")
+        headers = [
+            "Chainage",
+            "Distance",
+            "Friction",
+            "Av. Friction 100m",
+            "Speed",
+            "Color Code",
+        ]
+        chainage = chainage[headers]
 
         return chainage
 
@@ -150,7 +171,7 @@ class ASFT_Data:
         return self._get_configuration()
 
     @property
-    def key_1(self) -> str:
+    def id_1(self) -> str:
         return (
             f"{self.friction_measurement_report.loc[0, 'Date and Time'].strftime('%y%m%d%H%M')}"
             f"{self.configuration.loc[0, 'iata']}"
@@ -160,28 +181,11 @@ class ASFT_Data:
         )
 
     @property
-    def key_2(self) -> str:
+    def id_2(self) -> str:
         return (
             f"{self.configuration.loc[0, 'iata']}"
             f"{self.configuration.loc[0, 'runway']}"
         )
-
-    # MANUALLY SET PROPERTIES
-    @property
-    def runway_length(self) -> int:
-        return self._measurement_info.get("runway_length")
-
-    @runway_length.setter
-    def runway_length(self, value: int) -> None:
-        self._measurement_info["runway_length"] = value
-
-    @property
-    def runway_starting_position(self) -> str:
-        return self._measurement_info.get("runway_starting_position")
-
-    @runway_starting_position.setter
-    def runway_starting_position(self, value: str) -> None:
-        self._measurement_info["runway_starting_position"] = value
 
     def _measurements_extractor(self):
         """
@@ -430,5 +434,3 @@ if __name__ == "__main__":
     a.runway_starting_position = 20
 
     print(a.friction_measurement_report.loc[0, "Date and Time"])
-
-# TODO: Use a dictionary for cacheing, fix docstrings, error handling in config, type hinting, validation to runway_length must be multipe of 10

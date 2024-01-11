@@ -25,8 +25,8 @@ def measurements_table(data: ASFT_Data) -> pd.DataFrame:
 def information_table(data: ASFT_Data) -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "key_1": [data.key_1],
-            "key_2": [data.key_2],
+            "id_1": [data.id_1],
+            "id_2": [data.id_2],
             "fecha": [data.friction_measurement_report.loc[0, "Date and Time"]],
             "iata": [data.configuration.loc[0, "iata"]],
             # "numbering": [data.numbering],
@@ -62,7 +62,7 @@ def add_data_to_db(data: ASFT_Data, excel_file: Union[str, Path]):
     if file_path.exists():
         existing_information_table = pd.read_excel(excel_file, sheet_name="Information")
 
-        if any(information["key_1"].isin(existing_information_table["key_1"])):
+        if any(information["id_1"].isin(existing_information_table["id_1"])):
             raise Exception("The key already exists in the database.")
 
     append_dataframe_to_excel(measurements, excel_file, "Measurements")
