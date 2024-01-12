@@ -5,6 +5,8 @@ from pathlib import Path
 from pypdf import PdfReader
 
 
+# TODO: fix chainage table with color code (not reference color names inside the function, delete coumn and recall it)
+# TODO: fix report extractor, place everything insied a function
 class ASFT_Data:
     def __init__(self, file_path: Path) -> None:
         self.filename: str = file_path.stem
@@ -149,7 +151,7 @@ class ASFT_Data:
                 chainage[col] = 0.0
         for col in self.measurements.columns:
             if col not in chainage.columns:
-                chainage[col] = "white" if col == "Color Code" else 0
+                chainage[col] = "blanco" if col == "Color Code" else 0
 
             for i, value in enumerate(self.measurements[col]):
                 chainage.at[start_index + i, col] = value
@@ -172,13 +174,7 @@ class ASFT_Data:
 
     @property
     def id_1(self) -> str:
-        return (
-            f"{self.friction_measurement_report.loc[0, 'Date and Time'].strftime('%y%m%d%H%M')}"
-            f"{self.configuration.loc[0, 'iata']}"
-            f"{self.configuration.loc[0, 'runway']}"
-            f"{self.configuration.loc[0, 'relative side']}"
-            f"{self.configuration.loc[0, 'separation']}"
-        )
+        return self.filename.replace(" ", "")
 
     @property
     def id_2(self) -> str:
@@ -229,7 +225,7 @@ class ASFT_Data:
             page = reader.pages[0]
             text = page.extract_text()
             patterns = {
-                "Configuration": r"Configuration\s+(.+?)\s+Tyre Type",
+                # "Configuration": r"Configuration\s+(.+?)\s+Tyre Type",
                 "Tyre Type": r"Tyre Type\s+(.+?)\s*$",
                 "Date and Time": r"Date and Time\s+(.+?)\s+Tyre Pressure",
                 "Tyre Pressure": r"Tyre Pressure\s+(.+?)\s*$",
@@ -253,6 +249,12 @@ class ASFT_Data:
             df["Date and Time"] = pd.to_datetime(
                 df["Date and Time"], format="%y-%m-%d %H:%M:%S"
             )
+
+            start = text.find("Configuration") + len("Configuration ")
+            end = text.find("Tyre Type")
+            configuration_text = text[start:end].replace("\n", " ").strip()
+
+            df["Configuration"] = configuration_text
 
             self._cache[key] = df
         return self._cache[key]
@@ -330,25 +332,25 @@ class ASFT_Data:
 
         def assign_color_based_on_friction(friction_average):
             if friction_average == 0.0:
-                return "white"
+                return "blanco"
             elif friction_average < 0.5:
-                return "red"
+                return "rojo"
             elif friction_average < 0.6:
-                return "yellow"
+                return "amarillo"
             else:
-                return "green"
+                return "verde"
 
         assigned_colors = series.apply(assign_color_based_on_friction)
 
-        red_color_mask = assigned_colors == "red"
-        white_color_mask = assigned_colors == "white"
+        red_color_mask = assigned_colors == "rojo"
+        white_color_mask = assigned_colors == "blanco"
 
         for offset in range(-5, 6):
-            shifted_red_mask = assigned_colors.shift(offset) == "red"
-            shifted_white_mask = assigned_colors.shift(offset) == "white"
+            shifted_red_mask = assigned_colors.shift(offset) == "rojo"
+            shifted_white_mask = assigned_colors.shift(offset) == "blanco"
             red_color_mask |= shifted_red_mask & ~shifted_white_mask
 
-        assigned_colors.loc[red_color_mask] = "red"
+        assigned_colors.loc[red_color_mask] = "rojo"
 
         return assigned_colors
 
@@ -382,10 +384,9 @@ class ASFT_Data:
         key = "configuration"
         if key not in self._cache:
             config = self.friction_measurement_report.loc[0, "Configuration"]
-
-            _temp: str = re.search(r"[A-Z][0-9]", config).group()
+            _temp: str = re.findall(r"[A-Z][0-9]", config)[-1]
             iata: str = re.search(r"^[A-Z]{3}", config).group()
-            numbering: str = re.search(r"\b\d{2}\b", config).group()
+            numbering: str = re.search(r"\d{2}\b", config).group()
             relative_side: str = _temp[0]
             separation: int = int(_temp[1])
 
