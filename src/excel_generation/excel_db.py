@@ -1,11 +1,14 @@
 from pdf_processing.ASFT_Data import ASFT_Data
 import pandas as pd
 from pathlib import Path
-from typing import Optional, Union
 from excel_generation.functions.excel_operations import append_dataframe_to_excel
+from pdf_processing.pdf_management import create_asft_objects
+import locale
+
+locale.setlocale(locale.LC_TIME, "es")
 
 
-def measurements_table(data: ASFT_Data) -> pd.DataFrame:
+def _measurements_table(data: ASFT_Data) -> pd.DataFrame:
     measurements = data.measurements_with_chainage
     measurements_df = pd.DataFrame(
         {
@@ -22,7 +25,7 @@ def measurements_table(data: ASFT_Data) -> pd.DataFrame:
     return measurements_df
 
 
-def information_table(data: ASFT_Data) -> pd.DataFrame:
+def _information_table(data: ASFT_Data) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "id_1": [data.id_1],
@@ -64,9 +67,9 @@ def information_table(data: ASFT_Data) -> pd.DataFrame:
     )
 
 
-def add_data_to_db(data: ASFT_Data, excel_file: Union[str, Path]):
-    measurements = measurements_table(data)
-    information = information_table(data)
+def _add_asft_data_to_db(data: ASFT_Data, excel_file: Path):
+    measurements = _measurements_table(data)
+    information = _information_table(data)
 
     file_path = Path(excel_file)
     if file_path.exists():
@@ -77,3 +80,47 @@ def add_data_to_db(data: ASFT_Data, excel_file: Union[str, Path]):
 
     append_dataframe_to_excel(measurements, excel_file, "Mediciones")
     append_dataframe_to_excel(information, excel_file, "Información")
+
+
+def create_measurement_file(
+    asft_measurements_folder: Path,
+    target_directory: Path,
+    runway_length: int,
+    runway_starting_position_0118: int,
+    runway_starting_position_1936: int,
+    operator: str,
+    ambient_temperature: float,
+    surface_temperature: float,
+    humidity: float,
+    observations: str,
+) -> None:
+    measurements = create_asft_objects(asft_measurements_folder)
+    excel_file = None
+
+    for index, measurement in enumerate(measurements):
+        if index == 0:
+            date = measurement.friction_measurement_report.loc[
+                0, "Date and Time"
+            ].strftime("%d-%B-%y")
+            iata = measurement.configuration.loc[0, "iata"]
+            rwy = measurement.configuration.loc[0, "runway"]
+            file_name = f"{iata}{rwy}-{date}.xlsx"
+            excel_file = target_directory / file_name
+
+        numbering = int(measurement.configuration.loc[0, "numbering"])
+        measurement.runway_length = runway_length
+        measurement.operator = operator
+        measurement.ambient_temperature = ambient_temperature
+        measurement.surface_temperature = surface_temperature
+        measurement.humidity = humidity
+        measurement.observations = observations
+
+        if numbering < 18:
+            measurement.runway_starting_position = runway_starting_position_0118
+        else:
+            measurement.runway_starting_position = runway_starting_position_1936
+
+        try:
+            _add_asft_data_to_db(measurement, excel_file)
+        except Exception as e:
+            print(f"Error agregando {measurement} a la base de datos: {e}")

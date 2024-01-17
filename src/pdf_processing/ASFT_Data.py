@@ -37,6 +37,13 @@ class ASFT_Data:
         """
         return len(self.measurements)
 
+    def __repr__(self) -> str:
+        """
+        Returns:
+            ASFT_Data Object: AEP RWY 31  L3_230427_013908
+        """
+        return f"ASFT_Data Object: {self.filename}"
+
     @property
     def friction_measurement_report(self) -> pd.DataFrame:
         """
