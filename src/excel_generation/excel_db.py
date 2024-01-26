@@ -104,7 +104,7 @@ def create_measurement_file(
             ].strftime("%d-%B-%y")
             iata = measurement.configuration.loc[0, "iata"]
             rwy = measurement.configuration.loc[0, "runway"]
-            file_name = f"{iata}{rwy}-{date}.xlsx"
+            file_name = f"{iata}_RWY{rwy}_{date}.xlsx"
             excel_file = target_directory / file_name
 
         numbering = int(measurement.configuration.loc[0, "numbering"])
@@ -115,7 +115,7 @@ def create_measurement_file(
         measurement.humidity = humidity
         measurement.observations = observations
 
-        if numbering < 18:
+        if numbering <= 18:
             measurement.runway_starting_position = runway_starting_position_0118
         else:
             measurement.runway_starting_position = runway_starting_position_1936

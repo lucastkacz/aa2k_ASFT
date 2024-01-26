@@ -391,11 +391,17 @@ class ASFT_Data:
         key = "configuration"
         if key not in self._cache:
             config = self.friction_measurement_report.loc[0, "Configuration"]
+
             _temp: str = re.findall(r"[A-Z][0-9]", config)[-1]
             iata: str = re.search(r"^[A-Z]{3}", config).group()
-            numbering: str = re.search(r"\d{2}\b", config).group()
+            numbering: str = re.search(r"\d{2}(?=\D|$)", config).group()
             relative_side: str = _temp[0]
             separation: int = int(_temp[1])
+
+            if separation == 5:
+                separation = "borde"
+            else:
+                separation = f"{separation}m"
 
             def get_runway_designation(runway: str) -> str:
                 runway_num = int(runway)
@@ -434,11 +440,11 @@ class ASFT_Data:
 
 
 if __name__ == "__main__":
-    a = ASFT_Data(
-        Path("C:/Users/lucas/Desktop/aa2k_ASFT/pdf/AEP/AEP RWY 13 L3_230427_013450.pdf")
+    test = ASFT_Data(
+        Path(
+            r"C:\Users\lucas\Desktop\aa2k_ASFT\pdf\MDZ\MDZ RWY 18 L3_231219_215235.pdf"
+        )
     )
-
-    a.runway_length = 2430
-    a.runway_starting_position = 20
-
-    print(a.friction_measurement_report.loc[0, "Date and Time"])
+    test.runway_starting_position = 20
+    test.runway_length = 2800
+    print(test.measurements_with_chainage.head(30))
