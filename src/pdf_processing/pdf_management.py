@@ -1,5 +1,5 @@
 from pathlib import Path
-from pdf_processing.ASFT_Data import ASFT_Data
+from src.pdf_processing.ASFT_Data import ASFT_Data
 
 
 def create_asft_objects(directory: Path) -> list[ASFT_Data]:

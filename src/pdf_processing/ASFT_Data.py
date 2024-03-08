@@ -223,8 +223,8 @@ class ASFT_Data:
 
     def _report_extractor(self, reader):
         """
-           Configuration Tyre Type      Date and Time Tyre Pressure  Type Water Film Equipment Average Speed  Pilot System Distance Ice Level Runway Length Location
-        0  RGL RWY 07 R3      ASTM  23-03-10 11:29:28           2.1  ASTM         ON   SFT0148            66  SUPER         2398.58         0          3300     ASFT
+          Tyre Type Tyre Pressure  Type Water Film Equipment Average Speed  Pilot System Distance Ice Level Runway Length Location        Date      Time Configuration
+        0      ASTM           2.1  ASTM         ON   SFT0161            65  SUPER          2204.3         0          2100     ASFT  2024-02-28  10:47:38  AEP RWY31 L3
         """
 
         key = "report"
@@ -232,7 +232,6 @@ class ASFT_Data:
             page = reader.pages[0]
             text = page.extract_text()
             patterns = {
-                # "Configuration": r"Configuration\s+(.+?)\s+Tyre Type",
                 "Tyre Type": r"Tyre Type\s+(.+?)\s*$",
                 "Date and Time": r"Date and Time\s+(.+?)\s+Tyre Pressure",
                 "Tyre Pressure": r"Tyre Pressure\s+(.+?)\s*$",
@@ -253,9 +252,13 @@ class ASFT_Data:
                 extracted_values[key] = match.group(1) if match else None
 
             df = pd.DataFrame([extracted_values])
+
             df["Date and Time"] = pd.to_datetime(
                 df["Date and Time"], format="%y-%m-%d %H:%M:%S"
             )
+            df["Date"] = df["Date and Time"].dt.date
+            df["Time"] = df["Date and Time"].dt.time
+            df.drop(columns=["Date and Time"], inplace=True)
 
             start = text.find("Configuration") + len("Configuration ")
             end = text.find("Tyre Type")
@@ -442,9 +445,10 @@ class ASFT_Data:
 if __name__ == "__main__":
     test = ASFT_Data(
         Path(
-            r"C:\Users\lucas\Desktop\aa2k_ASFT\pdf\MDZ\MDZ RWY 18 L3_231219_215235.pdf"
+            r"C:\Users\lucas\Desktop\aa2k_ASFT\pdf\AEP\28 de febrero\AEP RWY31 L3_240228_104738.pdf"
         )
     )
-    test.runway_starting_position = 20
-    test.runway_length = 2800
-    print(test.measurements_with_chainage.head(30))
+    # test.runway_starting_position = 2200
+    # test.runway_length = 2280
+    # print(test.measurements_with_chainage.tail(30))
+    print(test.friction_measurement_report)

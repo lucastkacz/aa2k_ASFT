@@ -1,8 +1,8 @@
-from pdf_processing.ASFT_Data import ASFT_Data
+from src.pdf_processing.ASFT_Data import ASFT_Data
 import pandas as pd
 from pathlib import Path
-from excel_generation.functions.excel_operations import append_dataframe_to_excel
-from pdf_processing.pdf_management import create_asft_objects
+from src.excel_generation.functions.excel_operations import append_dataframe_to_excel
+from src.pdf_processing.pdf_management import create_asft_objects
 import locale
 
 locale.setlocale(locale.LC_TIME, "es")
@@ -30,7 +30,8 @@ def _information_table(data: ASFT_Data) -> pd.DataFrame:
         {
             "id_1": [data.id_1],
             "id_2": [data.id_2],
-            "fecha": [data.friction_measurement_report.loc[0, "Date and Time"]],
+            "fecha": [data.friction_measurement_report.loc[0, "Date"]],
+            "horario": [data.friction_measurement_report.loc[0, "Time"]],
             "iata": [data.configuration.loc[0, "iata"]],
             "cabecera": [data.configuration.loc[0, "numbering"]],
             "lado relativo": [data.configuration.loc[0, "relative side"]],
@@ -99,9 +100,7 @@ def create_measurement_file(
 
     for index, measurement in enumerate(measurements):
         if index == 0:
-            date = measurement.friction_measurement_report.loc[
-                0, "Date and Time"
-            ].strftime("%d-%B-%y")
+            date = measurement.friction_measurement_report.loc[0, "Date"]
             iata = measurement.configuration.loc[0, "iata"]
             rwy = measurement.configuration.loc[0, "runway"]
             file_name = f"{iata}_RWY{rwy}_{date}.xlsx"
