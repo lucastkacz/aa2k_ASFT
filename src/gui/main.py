@@ -1,7 +1,21 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
+from tkinter import PhotoImage
 from src.excel_generation.excel_db import create_measurement_file
+import os
+import sys
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 
 class MeasurementApp:
@@ -9,11 +23,12 @@ class MeasurementApp:
         self.root = root
         self.root.title("Mediciones ASFT")
 
-        # Setup frames
-        self.setup_frames()
+        icon = PhotoImage(file=resource_path(os.path.join("src", "gui", "logo.png")))
+        self.root.iconphoto(True, icon)
 
-        # Initialize all fields
+        self.setup_frames()
         self.init_fields()
+        self.add_made_by_label()
 
     def setup_frames(self):
         self.input_frame = ttk.Frame(self.root, padding="10")
@@ -21,6 +36,15 @@ class MeasurementApp:
 
         self.button_frame = ttk.Frame(self.root, padding="10")
         self.button_frame.grid(row=1, column=0, sticky=tk.E)
+
+        self.footer_frame = ttk.Frame(self.root, padding="10")
+        self.footer_frame.grid(row=2, column=0, sticky=(tk.W, tk.E))
+
+    def add_made_by_label(self):
+        # Add a label to the footer frame
+        ttk.Label(self.footer_frame, text="Hecho por Lucas Ariel Tkacz \tv1.0.0").grid(
+            column=0, row=0, sticky=tk.W
+        )
 
     def init_fields(self):
         # ASFT Measurements Folder
